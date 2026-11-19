@@ -5,7 +5,11 @@ on:
   workflow_dispatch:
 
 concurrency:
+  group: build-release-${{ github.ref }}
   cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
   build-release:
@@ -138,15 +142,18 @@ jobs:
           EOF
 
       - name: Publish release
-        uses: https://code.forgejo.org/actions/forgejo-release@v2.13.4
-        with:
-          direction: upload
-          url: ${{ forgejo.server_url }}
-          repo: ${{ forgejo.repository }}
-          token: ${{ secrets.FORGEJO_TOKEN }}
-          tag: ${{ steps.prepare.outputs.tag }}
-          sha: ${{ forgejo.sha }}
-          title: ${{ steps.prepare.outputs.title }}
-          release-dir: dist
-          release-notes-file: release-notes.md
-          override: 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.prepare.outputs.tag }}
+          TITLE: ${{ steps.prepare.outputs.title }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          else
+            git push origin --delete "refs/tags/$TAG" 2>/dev/null || true
+          fi
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "$TITLE" \
+            --notes-file release-notes.md
