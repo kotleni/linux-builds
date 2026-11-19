@@ -138,7 +138,7 @@ jobs:
           EOF
 
       - name: Publish release
-        uses: actions/forgejo-release@v2.13.4
+        uses: https://code.forgejo.org/actions/forgejo-release@v2.13.4
         with:
           direction: upload
           url: ${{ forgejo.server_url }}
