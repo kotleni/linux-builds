@@ -67,7 +67,7 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           cd "${{ steps.prepare.outputs.srcdir }}"
           make -j"$(nproc)"
-          make INSTALL_MOD_PATH="$GITHUB_WORKSPACE/rootfs" modules_install
+          make INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="$GITHUB_WORKSPACE/rootfs" modules_install
 
       - name: Stage kernel files
         run: |
