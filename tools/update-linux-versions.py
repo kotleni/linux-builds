@@ -2,7 +2,8 @@
 """Bump pkgver in every linux-*/PKGBUILD to the latest kernel release.
 
 Usage:
-    update-linux-versions.py [--write] [--check] [--track stable|mainline]
+    update-linux-versions.py [--write] [--check] [--print-latest]
+                             [--track stable|mainline|longterm]
                              [--package DIR] [--root DIR] [--releases-url URL] [--force]
 
     Default is a dry run: report what would change, touch nothing.
@@ -90,7 +91,7 @@ def main():
     ap.add_argument("--write", action="store_true", help="apply version bumps")
     ap.add_argument("--check", action="store_true", help="exit 1 if any package is outdated")
     ap.add_argument("--print-latest", action="store_true", help="print latest version and exit")
-    ap.add_argument("--track", default=DEFAULT_TRACK, choices=["stable", "mainline"])
+    ap.add_argument("--track", default=DEFAULT_TRACK, choices=["stable", "mainline", "longterm"])
     ap.add_argument("--package", default=None,
                     help="only check this package dir (e.g. linux-amdkotleni)")
     ap.add_argument("--root", default=Path(__file__).resolve().parent.parent)

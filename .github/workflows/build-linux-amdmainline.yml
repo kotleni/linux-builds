@@ -1,0 +1,125 @@
+name: build linux-amdmainline
+
+on:
+  push:
+    tags:
+      - 'linux-amdmainline-*'
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-linux-amdmainline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.ver.outputs.changed }}
+    defaults:
+      run:
+        working-directory: linux-amdmainline
+    steps:
+      - name: Checkout (shallow)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Check for kernel updates
+        id: ver
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "tag build requested, skipping version check"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          LATEST="$(python3 "$GITHUB_WORKSPACE/tools/update-linux-versions.py" --print-latest --track mainline)"
+          BASE="$(grep -m1 '^pkgbase=' PKGBUILD | cut -d= -f2)"
+          TAG="$BASE-${LATEST//-/}-build0"
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "already released ($TAG exists), nothing to do"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new version $LATEST, will build and release as $TAG"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    container:
+      image: archlinux:latest
+    defaults:
+      run:
+        working-directory: linux-amdmainline
+    steps:
+      - name: Checkout (full history for tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-linux-amdmainline-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            ccache-linux-amdmainline-
+
+      - name: Install base + build deps
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git sudo ccache \
+            bc binutils cpio gettext glibc libelf libgcc openssl pahole perl python rust rust-bindgen rust-src tar xxhash xz zlib zstd \
+            graphviz imagemagick python-sphinx python-yaml texlive-latexextra
+          useradd -m builder || true
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          mkdir -p /home/builder/.ccache
+          chown -R builder:builder /home/builder/.ccache
+
+      - name: Show toolchain versions
+        run: |
+          su builder -c 'cd "$GITHUB_WORKSPACE/linux-amdmainline" && bash -c "source ./PKGBUILD; echo pkgbase=\$pkgbase pkgver=\$pkgver pkgrel=\$pkgrel"'
+          gcc --version | head -n 1
+          pahole --version || true
+
+      - name: Build packages with makepkg
+        run: |
+          su builder -c 'cd "$GITHUB_WORKSPACE/linux-amdmainline" && export MAKEFLAGS="-j$(nproc)" && export CC="ccache gcc" && export CXX="ccache g++" && ccache -z; makepkg -s --noconfirm --needed --cleanbuild; ccache -s'
+
+      - name: List built packages + checksums
+        run: |
+          ls -lh ./*.pkg.tar.zst
+          sha256sum ./*.pkg.tar.zst | tee SHA256SUMS.txt
+          BASE="$(grep -m1 '^pkgbase=' PKGBUILD | cut -d= -f2)"
+          FILE="$(ls "$BASE"-*.pkg.tar.zst | head -n1 | xargs basename)"
+          REST="${FILE#$BASE-}"
+          REST="${REST%.pkg.tar.zst}"
+          REST="${REST%-"${REST##*-}"}"
+          VER="${REST%-"${REST##*-}"}"
+          echo "RELTAG=$BASE-$VER-build0" >> "$GITHUB_ENV"
+          echo "built $FILE -> tag $BASE-$VER-build0"
+
+      - name: Create GitHub Release (autorelease from tag)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELTAG }}
+          name: ${{ env.RELTAG }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            linux-amdmainline/*.pkg.tar.zst
+            linux-amdmainline/SHA256SUMS.txt

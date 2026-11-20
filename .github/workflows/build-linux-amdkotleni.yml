@@ -45,7 +45,7 @@ jobs:
           fi
           LATEST="$(python3 "$GITHUB_WORKSPACE/tools/update-linux-versions.py" --print-latest)"
           BASE="$(grep -m1 '^pkgbase=' PKGBUILD | cut -d= -f2)"
-          TAG="$BASE-$LATEST-build0"
+          TAG="$BASE-${LATEST//-/}-build0"
           if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
             echo "already released ($TAG exists), nothing to do"
             echo "changed=false" >> "$GITHUB_OUTPUT"

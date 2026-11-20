@@ -2,8 +2,8 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
-PKGVER="$(bash -c 'source ./PKGBUILD >/dev/null 2>&1; printf "%s" "$pkgver"')"
-SRCDIR="$SCRIPT_DIR/src/linux-$PKGVER"
+_SRCNAME="$(bash -c 'source ./PKGBUILD >/dev/null 2>&1; printf "%s" "$_srcname"')"
+SRCDIR="$SCRIPT_DIR/src/$_SRCNAME"
 if [[ ! -f "$SRCDIR/Kconfig" ]]; then
   makepkg -o --nobuild
 fi
