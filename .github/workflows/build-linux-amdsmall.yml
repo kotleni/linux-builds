@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'linux-amdsmall-*'
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -27,7 +30,29 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check for kernel updates
+        id: ver
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "tag build, skipping version check"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "RELTAG=${{ github.ref_name }}" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          command -v python3 >/dev/null || pacman -Sy --noconfirm --needed python
+          LATEST="$(python3 "$GITHUB_WORKSPACE/tools/update-linux-versions.py" --print-latest)"
+          BASE="$(grep -m1 '^pkgbase=' PKGBUILD | cut -d= -f2)"
+          TAG="$BASE-$LATEST-build0"
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "already released ($TAG exists), nothing to do"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new version $LATEST, will build and release as $TAG"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Restore ccache
+        if: steps.ver.outputs.changed == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.ccache
@@ -36,6 +61,7 @@ jobs:
             ccache-linux-amdsmall-
 
       - name: Install base + build deps
+        if: steps.ver.outputs.changed == 'true'
         run: |
           pacman -Syu --noconfirm --needed \
             base-devel git sudo ccache \
@@ -48,24 +74,37 @@ jobs:
           chown -R builder:builder /home/builder/.ccache
 
       - name: Show toolchain versions
+        if: steps.ver.outputs.changed == 'true'
         run: |
           su builder -c 'cd "$GITHUB_WORKSPACE/linux-amdsmall" && bash -c "source ./PKGBUILD; echo pkgbase=\$pkgbase pkgver=\$pkgver pkgrel=\$pkgrel"'
           gcc --version | head -n 1
           pahole --version || true
 
       - name: Build packages with makepkg
+        if: steps.ver.outputs.changed == 'true'
         run: |
           su builder -c 'cd "$GITHUB_WORKSPACE/linux-amdsmall" && export MAKEFLAGS="-j$(nproc)" && export CC="ccache gcc" && export CXX="ccache g++" && ccache -z; makepkg -s --noconfirm --needed --cleanbuild; ccache -s'
 
       - name: List built packages + checksums
+        if: steps.ver.outputs.changed == 'true'
         run: |
           ls -lh ./*.pkg.tar.zst
           sha256sum ./*.pkg.tar.zst | tee SHA256SUMS.txt
+          BASE="$(grep -m1 '^pkgbase=' PKGBUILD | cut -d= -f2)"
+          FILE="$(ls "$BASE"-*.pkg.tar.zst | head -n1 | xargs basename)"
+          REST="${FILE#$BASE-}"
+          REST="${REST%.pkg.tar.zst}"
+          REST="${REST%-"${REST##*-}"}"
+          VER="${REST%-"${REST##*-}"}"
+          echo "RELTAG=$BASE-$VER-build0" >> "$GITHUB_ENV"
+          echo "built $FILE -> tag $BASE-$VER-build0"
 
       - name: Create GitHub Release (autorelease from tag)
+        if: steps.ver.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELTAG }}
+          name: ${{ env.RELTAG }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |

@@ -1,8 +1,12 @@
 # Maintainer: Viktor Varenyk (kotleni) <yavarenikya@gmail.com>
 
 pkgbase=linux-amdsmall
-pkgver=7.3.5
 pkgrel=1
+
+# No hardcoded kernel version: resolved from kernel.org at build time.
+# Pin a specific version with: _KVER=7.3.5 makepkg -s
+_KVER=${_KVER:-$(python3 -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("https://www.kernel.org/releases.json", timeout=30))["latest_stable"]["version"])')}
+pkgver=${_KVER:?failed to resolve latest kernel version}
 pkgdesc='Linux'
 url='https://www.kernel.org/'
 arch=(

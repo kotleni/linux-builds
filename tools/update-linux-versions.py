@@ -3,7 +3,7 @@
 
 Usage:
     update-linux-versions.py [--write] [--check] [--track stable|mainline]
-                             [--root DIR] [--releases-url URL] [--force]
+                             [--package DIR] [--root DIR] [--releases-url URL] [--force]
 
     Default is a dry run: report what would change, touch nothing.
     --write  apply the bump (pkgver=<latest>, pkgrel=1) to outdated packages.
@@ -67,7 +67,10 @@ def url_exists(url, timeout=30):
 def read_pkgbuild(path):
     text = path.read_text()
     base = re.search(r"^pkgbase=(.+)$", text, re.M).group(1).strip().strip("'\"")
-    ver = re.search(r"^pkgver=(.+)$", text, re.M).group(1).strip().strip("'\"")
+    m = re.search(r"^pkgver=([^\n]+)$", text, re.M)
+    ver = m.group(1).strip().strip("'\"") if m else None
+    if ver is not None and "$" in ver:
+        ver = None  # dynamic pkgver (resolved at build time), nothing to bump
     m = re.search(r"^pkgrel=(.+)$", text, re.M)
     rel = m.group(1).strip().strip("'\"") if m else None
     return text, base, ver, rel
@@ -86,7 +89,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--write", action="store_true", help="apply version bumps")
     ap.add_argument("--check", action="store_true", help="exit 1 if any package is outdated")
+    ap.add_argument("--print-latest", action="store_true", help="print latest version and exit")
     ap.add_argument("--track", default=DEFAULT_TRACK, choices=["stable", "mainline"])
+    ap.add_argument("--package", default=None,
+                    help="only check this package dir (e.g. linux-amdkotleni)")
     ap.add_argument("--root", default=Path(__file__).resolve().parent.parent)
     ap.add_argument("--releases-url", default=RELEASES_URL)
     ap.add_argument("--force", action="store_true", help="skip tarball existence check")
@@ -99,6 +105,9 @@ def main():
         print(f"error: cannot determine latest {args.track}: {e}", file=sys.stderr)
         return 2
     print(f"latest {args.track}: {latest}")
+    if args.print_latest:
+        print(latest)
+        return 0
 
     if "-" in latest and not args.force:
         print(f"warning: '{latest}' is a pre-release; PKGBUILD tarball URL won't match, skipping", file=sys.stderr)
@@ -111,14 +120,26 @@ def main():
             return 0
         print(f"tarball ok: {url}")
 
-    pkgbuilds = sorted(root.glob("linux-*/PKGBUILD"))
-    if not pkgbuilds:
-        print("error: no linux-*/PKGBUILD found", file=sys.stderr)
-        return 2
+    if args.package:
+        cand = Path(args.package)
+        cand = cand if cand.is_absolute() else root / cand
+        pb = cand if cand.name == "PKGBUILD" else cand / "PKGBUILD"
+        pkgbuilds = [pb] if pb.is_file() else []
+        if not pkgbuilds:
+            print(f"error: no PKGBUILD in {cand}", file=sys.stderr)
+            return 2
+    else:
+        pkgbuilds = sorted(root.glob("linux-*/PKGBUILD"))
+        if not pkgbuilds:
+            print("error: no linux-*/PKGBUILD found", file=sys.stderr)
+            return 2
 
     outdated = []
     for pb in pkgbuilds:
         text, base, ver, _rel = read_pkgbuild(pb)
+        if ver is None:
+            print(f"{base}: dynamic pkgver (resolved at build time), skipping")
+            continue
         if parse_version(ver) >= parse_version(latest):
             print(f"{base}: {ver} (up to date)")
             continue
