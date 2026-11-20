@@ -11,5 +11,5 @@ cp config.amd-desktop-x86_64 "$SRCDIR/.config"
 make -C "$SRCDIR" menuconfig
 make -C "$SRCDIR" olddefconfig
 if ! cmp -s "$SRCDIR/.config" config; then
-  cp "$SRCDIR/.config.amd-desktop-x86_64" config
+  cp "$SRCDIR/.config" config.amd-desktop-x86_64
 fi

@@ -78,7 +78,6 @@ build() {
   local pid_docs=$!
 
   make all
-  make -C tools/bpf/bpftool vmlinux.h feature-clang-bpf-co-re=1
   wait $pid_docs
 }
 
@@ -151,7 +150,11 @@ _package-headers() {
 
   echo "Installing build files..."
   install -Dt "$builddir" -m644 .config Makefile Module.symvers System.map \
-    localversion.* version vmlinux tools/bpf/bpftool/vmlinux.h
+    localversion.* version vmlinux
+  # vmlinux.h is only generated when CONFIG_DEBUG_INFO_BTF=y (skipped on slim desktop configs)
+  if [[ -f tools/bpf/bpftool/vmlinux.h ]]; then
+    install -Dt "$builddir" -m644 tools/bpf/bpftool/vmlinux.h
+  fi
   install -Dt "$builddir/kernel" -m644 kernel/Makefile
   install -Dt "$builddir/arch/$karch" -m644 arch/$karch/Makefile
   cp -t "$builddir" -a scripts
