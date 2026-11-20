@@ -1,6 +1,6 @@
 # Maintainer: Viktor Varenyk (kotleni) <yavarenikya@gmail.com>
 
-pkgbase=linux-kotleni
+pkgbase=linux-amdkotleni
 pkgver=7.3.5
 pkgrel=1
 pkgdesc='Linux'
